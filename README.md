@@ -1,215 +1,10 @@
-# RAG-CY - 年报智能问答系统
+# QueryDocs - 年报智能问答系统
 
 > 基于检索增强生成（RAG）技术的公司年报智能问答系统。
 
-[English](#english) | [中文](#中文)
+## 项目介绍
 
----
-
-## English
-
-### Project Overview
-
-RAG-CY is a RAG-based question answering system designed to answer questions about company annual reports. It combines advanced PDF parsing, intelligent chunking, hybrid retrieval, and large language model technologies to provide accurate, structured answers from annual report documents.
-
-### RAG Technologies Used
-
-#### 1. PDF Parsing (MinerU API)
-- Cloud-based PDF parsing with MinerU API
-- Supports text, tables, formulas, and OCR
-- Outputs structured JSON (`content_list_v2.json`) preserving document structure
-
-#### 2. Intelligent Chunking Strategy
-- **Type-aware chunking**: Different strategies for different content types
-  - Atomic types (`title`, `table`, `image`): Never split, preserve structure integrity
-  - Splittable types (`paragraph`, `list`): Split at sentence boundaries
-- **Title-content combination**: Titles are combined with subsequent content as prefixes
-- **Table-aware splitting**: Tables split at HTML tag boundaries (`<tr>`, `<td>`)
-- Configurable chunk size (default 300 tokens) and overlap (default 50 tokens)
-
-#### 3. Hybrid Retrieval
-- **Vector retrieval** (FAISS + DashScope/OpenAI embeddings): Captures semantic similarity
-- **BM25 keyword retrieval**: Exact keyword matching for numbers and proper nouns
-- **HybridRetriever**: Combines both with weighted scoring
-
-#### 4. LLM-based Reranking
-- **LLMReranker**: Uses LLM (Qwen/GPT-4o-mini/MiniMax) to score document relevance
-- **Weighted fusion**: `combined_score = llm_weight * relevance_score + vector_weight * distance`
-- Reduces hallucinations by filtering irrelevant documents
-
-#### 5. Parent Document Retrieval
-- Retrieves complete pages instead of small chunks
-- Solves context fragmentation issues
-- Ideal for questions requiring full paragraph understanding
-
-#### 6. Table Serialization
-- Converts table HTML into structured information blocks via LLM
-- Includes: core entity, relevant headers, full description
-- Makes table content searchable via embeddings
-
-#### 7. Structured Output with Chain-of-Thought
-- Pydantic models validate output format
-- Step-by-step reasoning (CoT) in `step_by_step_analysis` field
-- Different prompt templates for different answer types:
-  - `NumberPrompt`: Strict metric matching, rejects non-equivalent indicators
-  - `BooleanPrompt`: True/False answers
-  - `NamesPrompt`: Entity lists (names, positions, products)
-  - `StringPrompt`: Free-text summaries
-  - `ComparativePrompt`: Multi-company comparisons
-
-#### 8. Query Routing for Comparative Questions
-- Detects multiple companies in questions
-- Decomposes comparative questions into single-company sub-questions
-- Parallel processing with final comparative conclusion
-
-### Optimization Highlights
-
-#### Performance Optimizations
-| Optimization | Implementation |
-|--------------|----------------|
-| **Parallel processing** | ThreadPoolExecutor for batch question processing |
-| **QPS protection** | `max_workers=1` for DashScope to avoid rate limits |
-| **Batch embedding** | 25 documents per batch for vector DB ingestion |
-| **Incremental saving** | Checkpoint saving during batch processing |
-
-#### Retrieval Optimizations
-| Optimization | Implementation |
-|--------------|----------------|
-| **Company-based filtering** | Pre-filter by company name before retrieval |
-| **Hybrid scoring** | Combines vector + keyword + LLM scores |
-| **Relevance calibration** | LLM reranking for better context selection |
-| **Page reference validation** | Filters hallucinated page numbers |
-
-#### Answer Quality Optimizations
-| Optimization | Implementation |
-|--------------|----------------|
-| **Strict metric matching** | NumberPrompt rejects non-equivalent indicators |
-| **Hallucination detection** | Validates page references against retrieval results |
-| **Citation verification** | Ensures cited pages actually exist in context |
-| **Incremental improvement** | Multi-round CoT reasoning |
-
-### Technical Challenges & Solutions
-
-#### Challenge 1: Table Structure Preservation
-**Problem**: Simple chunking by token count would split tables, breaking their structure.
-
-**Solution**: Type-aware chunking with table-aware splitting:
-```python
-ATOMIC_TYPES = {'title', 'table', 'image', 'page_header', 'page_number'}
-SPLITTABLE_TYPES = {'paragraph', 'list'}
-
-# Tables split at HTML tag boundaries
-html_parts = re.split(r'(<tr>|</tr>|<td>|</td>)', part)
-```
-
-#### Challenge 2: Context Fragmentation
-**Problem**: Small chunks lose paragraph-level context needed for comprehensive answers.
-
-**Solution**: Parent Document Retrieval returns complete pages:
-```python
-# Instead of returning small chunks, return full pages
-if return_parent_pages:
-    result = {"page": parent_page["page"], "text": parent_page["text"]}
-```
-
-#### Challenge 3: Metric Hallucination
-**Problem**: LLM might return "related but not equivalent" metrics (e.g., revenue vs. net profit).
-
-**Solution**: Strict indicator matching in NumberPrompt:
-```
-**Strict indicator matching requirement:**
-1. Only accept if context indicator meaning is EXACTLY equivalent
-2. Reject if: scope mismatch, proxy indicators, requires calculation
-3. Default to 'N/A' if any doubt about equivalence
-```
-
-#### Challenge 4: Page Reference Hallucination
-**Problem**: LLM might cite non-existent page numbers.
-
-**Solution**: Page reference validation:
-```python
-def _validate_page_references(self, claimed_pages, retrieval_results):
-    retrieved_pages = [r['page'] for r in retrieval_results]
-    validated = [p for p in claimed_pages if p in retrieved_pages]
-    # Filter hallucinated pages, supplement from top results
-```
-
-#### Challenge 5: Comparative Question Routing
-**Problem**: Comparative questions involve multiple companies, cannot be processed in single retrieval.
-
-**Solution**: Query decomposition pipeline:
-```python
-# 1. Detect companies in question
-# 2. Decompose into single-company sub-questions
-# 3. Process in parallel
-# 4. Generate comparative conclusion
-```
-
-### Tech Stack
-
-| Category | Technology | Purpose |
-|----------|------------|---------|
-| PDF Parsing | MinerU API | Cloud-based PDF parsing |
-| Vector DB | FAISS | Similarity search |
-| Keyword Retrieval | rank-bm25 | BM25 indexing |
-| Embeddings | DashScope / OpenAI | Text vectorization |
-| LLM | Qwen / GPT-4o / MiniMax | Answer generation |
-| API | FastAPI | RESTful API service |
-| Concurrency | concurrent.futures | Parallel processing |
-| Validation | Pydantic | Output structure validation |
-
-### Quick Start
-
-```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Configure API keys in .env
-cp .env.example .env
-
-# Parse PDFs
-python main.py parse-pdfs --parallel --max-workers 10
-
-# Process reports (chunking + vectorization)
-cd data/stock_data
-python ../../main.py process-reports --config ser_tab
-
-# Process questions
-python ../../main.py process-questions --config max
-
-# Or start API server
-cd src/api
-uvicorn main:app --reload --port 8000
-```
-
-### Project Structure
-
-```
-RAG-cy/
-├── main.py                 # CLI entry point
-├── src/
-│   ├── pipeline.py        # Pipeline orchestration
-│   ├── pdf_mineru.py      # PDF parsing (MinerU API)
-│   ├── text_splitter.py   # Type-aware chunking
-│   ├── ingestion.py       # Vector/BM25 indexing
-│   ├── retrieval.py       # Retrieval (Vector/BM25/Hybrid)
-│   ├── reranking.py       # LLM reranking
-│   ├── questions_processing.py  # Question processing
-│   ├── api_requests.py    # Multi-API processor
-│   ├── prompts.py         # Prompt templates
-│   ├── tables_serialization.py  # Table serialization
-│   ├── process_chunks.py  # Batch chunk processing
-│   └── api/              # FastAPI service
-└── data/stock_data/      # Data directory
-```
-
----
-
-## 中文
-
-### 项目介绍
-
-RAG-CY 是一个基于 RAG（检索增强生成）技术的年报智能问答系统。项目通过结合高级PDF解析、智能文本分块、混合检索和大语言模型技术，实现对公司年报的智能问答，提供准确、结构化的答案。
+QueryDocs 是一个基于 RAG（检索增强生成）技术的年报智能问答系统。项目通过结合高级PDF解析、智能文本分块、混合检索和大语言模型技术，实现对公司年报的智能问答，提供准确、结构化的答案。
 
 ### 使用的主要RAG技术
 
@@ -287,7 +82,7 @@ RAG-CY 是一个基于 RAG（检索增强生成）技术的年报智能问答系
 | **引用验证** | 确保引用的页面在实际上下文中 |
 | **增量改进** | 多轮思维链推理 |
 
-###难点及克服方法
+### 难点及克服方法
 
 #### 难点1：表格结构保持
 **问题**：简单按token数分块会切断表格，破坏其结构。
@@ -384,7 +179,7 @@ uvicorn main:app --reload --port 8000
 ### 项目结构
 
 ```
-RAG-cy/
+QueryDocs/
 ├── main.py                 # CLI入口
 ├── src/
 │   ├── pipeline.py        # 管道编排

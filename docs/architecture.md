@@ -1,8 +1,8 @@
-# RAG-CY 架构文档
+# QueryDocs 架构文档
 
 ## 1. 项目概述
 
-**项目名称**: RAG-CY - 年报智能问答系统
+**项目名称**: QueryDocs - 年报智能问答系统
 **核心功能**: 对公司年报PDF进行深度解析，构建RAG管道，实现基于检索增强生成的智能问答
 
 ### 技术特点
@@ -522,7 +522,7 @@ class RunConfig:
 ## 6. 目录结构
 
 ```
-RAG-cy/
+QueryDocs/
 ├── main.py                    # CLI入口
 ├── requirements.txt           # 依赖
 ├── setup.py
