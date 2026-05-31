@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="zh-CN"><head><script data-od-sandbox-shim="">(function(){
+  function makeStore(){
+    var data = {};
+    var api = {
+      getItem: function(k){ return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function(k, v){ data[k] = String(v); },
+      removeItem: function(k){ delete data[k]; },
+      clear: function(){ data = {}; },
+      key: function(i){ return Object.keys(data)[i] || null; }
+    };
+    Object.defineProperty(api, 'length', { get: function(){ return Object.keys(data).length; } });
+    return api;
+  }
+  function tryShim(name){
+    var works = false;
+    try { works = !!window[name] && typeof window[name].getItem === 'function'; void window[name].length; }
+    catch (_) { works = false; }
+    if (works) return;
+    try { Object.defineProperty(window, name, { configurable: true, value: makeStore() }); }
+    catch (_) { try { window[name] = makeStore(); } catch (__) {} }
+  }
+  tryShim('localStorage');
+  tryShim('sessionStorage');
+  document.addEventListener('click', (e) => {
+    if (!e.target || !(e.target instanceof Element)) return;
+    var link = e.target.closest('a[href]');
+    if (!link) return;
+    var href = link.getAttribute('href');
+    if (href === null) return;
+    var isAnchor = href.startsWith('#') || href === '';
+    if (isAnchor) {
+      e.preventDefault();
+      if (href === '' || href === '#') {
+        window.scrollTo({ top: 0 });
+        history.replaceState(null, '', ' ');
+      } else {
+        var targetId = href.slice(1);
+        var target = targetId ? document.getElementById(targetId) : null;
+        if (target) {
+          target.scrollIntoView();
+          location.hash === href && history.replaceState(null, '', ' ');
+          location.hash = href;
+        }
+      }
+    } else if (link.getAttribute('target') === '_blank') {
+      e.preventDefault();
+      let safe = false;
+      try {
+        var url = new URL(href, location.href);
+        safe =
+          url.protocol === 'http:' ||
+          url.protocol === 'https:' ||
+          url.protocol === 'mailto:';
+      } catch (_) {}
+      safe && window.open(href, '_blank', 'noopener,noreferrer');
+    }
+  });
+})();</script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>证券研究知识库问答</title>
+  <style>
+    /* ===== Design tokens — Modern minimal / Linear/Vercel ===== */
+    :root {
+      --bg:      oklch(99% 0.002 240);
+      --surface: oklch(100% 0 0);
+      --fg:      oklch(18% 0.012 250);
+      --muted:   oklch(54% 0.012 250);
+      --border:  oklch(92% 0.005 250);
+      --accent:  oklch(58% 0.18 255);
+      --accent-dim: oklch(58% 0.12 255 / 0.12);
+
+      --font-display: -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif;
+      --font-body:    -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+
+      --r-sm: 8px;
+      --r-md: 12px;
+      --r-lg: 16px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg);
+      color: var(--fg);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ---- Header ---- */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: oklch(99.5% 0.001 240 / 0.88);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .header-inner {
+      max-width: 960px;
+      margin: 0 auto;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .wordmark {
+      font-family: var(--font-display);
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      color: var(--fg);
+      white-space: nowrap;
+    }
+    .wordmark span { color: var(--accent); }
+    .header-badge {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: var(--accent-dim);
+      color: var(--accent);
+      padding: 2px 8px;
+      border-radius: 999px;
+    }
+
+    /* ---- Main ---- */
+    main {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 56px 24px 80px;
+    }
+
+    .hero-label {
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+    .hero-title {
+      font-family: var(--font-display);
+      font-size: clamp(28px, 4vw, 40px);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      color: var(--fg);
+      line-height: 1.15;
+      margin-bottom: 16px;
+    }
+    .hero-sub {
+      font-size: 16px;
+      color: var(--muted);
+      margin-bottom: 40px;
+      max-width: 52ch;
+    }
+
+    /* ---- Search bar ---- */
+    .search-wrap { position: relative; margin-bottom: 56px; }
+    .search-input {
+      width: 100%;
+      height: 56px;
+      padding: 0 56px 0 20px;
+      font-family: var(--font-body);
+      font-size: 16px;
+      color: var(--fg);
+      background: var(--surface);
+      border: 1.5px solid var(--border);
+      border-radius: var(--r-lg);
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+    .search-icon {
+      position: absolute; right: 18px; top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .search-btn {
+      position: absolute; right: 8px; top: 50%;
+      transform: translateY(-50%);
+      height: 40px; padding: 0 18px;
+      background: var(--accent); color: #fff;
+      border: 0; border-radius: var(--r-md);
+      font-family: var(--font-body); font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: opacity 0.15s;
+    }
+    .search-btn:hover { opacity: 0.88; }
+
+    /* ---- Result blocks ---- */
+    .results { display: flex; flex-direction: column; gap: 24px; }
+    .result-block {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+    }
+    .block-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+    .block-icon {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      display: grid; place-items: center;
+      flex-shrink: 0;
+    }
+    .block-icon svg { width: 14px; height: 14px; }
+    .block-title {
+      font-family: var(--font-display);
+      font-size: 13px; font-weight: 600; letter-spacing: 0.01em;
+    }
+    .block-badge {
+      margin-left: auto;
+      font-size: 11px; font-weight: 500; letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding: 2px 8px; border-radius: 999px;
+      background: var(--bg); color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .block-body { padding: 20px; }
+
+    .b-reasoning .block-icon  { background: oklch(70% 0.16 145 / 0.12); color: oklch(70% 0.16 145); }
+    .b-reasoning .block-title { color: oklch(70% 0.16 145); }
+    .b-summary .block-icon   { background: oklch(58% 0.18 255 / 0.12); color: var(--accent); }
+    .b-summary .block-title  { color: var(--accent); }
+    .b-pages .block-icon     { background: oklch(50% 0.14 30 / 0.12); color: oklch(50% 0.14 30); }
+    .b-pages .block-title    { color: oklch(50% 0.14 30); }
+    .b-answer .block-icon    { background: oklch(65% 0.16 340 / 0.12); color: oklch(65% 0.16 340); }
+    .b-answer .block-title   { color: oklch(65% 0.16 340); }
+
+    /* ---- Reasoning ---- */
+    .reasoning-steps { display: flex; flex-direction: column; gap: 12px; }
+    .reasoning-step { display: flex; gap: 12px; align-items: flex-start; }
+    .step-num {
+      width: 22px; height: 22px; border-radius: 50%;
+      background: oklch(70% 0.16 145 / 0.15); color: oklch(70% 0.16 145);
+      font-size: 11px; font-weight: 700;
+      display: grid; place-items: center; flex-shrink: 0; margin-top: 2px;
+    }
+    .step-text { font-size: 14px; color: var(--fg); line-height: 1.55; }
+    .step-text em { font-style: normal; font-weight: 600; color: oklch(70% 0.16 145); }
+
+    /* ---- Summary ---- */
+    .summary-lead { font-size: 15px; font-weight: 500; color: var(--fg); margin-bottom: 12px; line-height: 1.55; }
+    .summary-bullets { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .summary-bullets li { display: flex; gap: 8px; font-size: 14px; color: var(--muted); line-height: 1.5; }
+    .summary-bullets li::before { content: '—'; color: var(--border); flex-shrink: 0; }
+
+    /* ---- Pages ---- */
+    .pages-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+    .page-card {
+      padding: 14px 16px; border: 1px solid var(--border);
+      border-radius: var(--r-md); background: var(--bg);
+      cursor: pointer; transition: border-color 0.15s;
+    }
+    .page-card:hover { border-color: var(--accent); }
+    .page-source { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+    .page-title { font-size: 13px; font-weight: 500; color: var(--fg); line-height: 1.4; margin-bottom: 6px; }
+    .page-meta { display: flex; gap: 8px; align-items: center; }
+    .page-date { font-size: 11px; color: var(--muted); }
+    .page-score { font-size: 11px; font-weight: 600; color: oklch(70% 0.16 145); margin-left: auto; }
+
+    /* ---- Answer ---- */
+    .answer-text { font-size: 15px; line-height: 1.7; color: var(--fg); }
+    .answer-text .highlight { background: oklch(58% 0.18 255 / 0.1); border-radius: 3px; padding: 0 2px; }
+    .answer-disclaimer {
+      margin-top: 14px; padding: 10px 14px;
+      background: var(--bg); border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      font-size: 11px; color: var(--muted); line-height: 1.5;
+    }
+
+    /* ---- Query echo ---- */
+    .query-echo {
+      margin-bottom: 24px; padding: 12px 16px;
+      background: var(--accent-dim); border-radius: var(--r-md);
+      font-size: 13px; color: var(--accent);
+      border-left: 3px solid var(--accent);
+    }
+    .query-echo strong { font-weight: 600; }
+
+    /* ---- Loading skeleton ---- */
+    .skeleton { display: none; }
+    body.loading .result-block { display: none; }
+    body.loading .skeleton { display: flex; flex-direction: column; gap: 16px; }
+    .skeleton-row {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r-lg); padding: 20px;
+    }
+    .skeleton-line { height: 12px; background: var(--border); border-radius: 6px; margin-bottom: 10px; }
+    .skeleton-line:last-child { margin-bottom: 0; width: 70%; }
+    .skeleton-line.short { width: 40%; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 600px) {
+      main { padding: 40px 16px 60px; }
+      .pages-grid { grid-template-columns: 1fr; }
+      .search-btn { padding: 0 14px; font-size: 13px; }
+    }
+  </style>
+<style data-od-tweaks-bridge-style="">
+[data-od-tweaks-hidden] .tw-panel {
+  transform: translateX(calc(100% + 32px)) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+.tw-restore { display: none !important; }
+</style><script data-od-tweaks-bridge="">(function(){
+  // Synchronously hide BEFORE the artifact body parses so the panel never
+  // flashes on initial paint. The host removes the attribute via postMessage
+  // once it knows the desired state.
+  document.documentElement.setAttribute('data-od-tweaks-hidden', '');
+
+  var suppressEcho = false;
+  var observer = null;
+
+  function panelEl(){ return document.querySelector('.tw-panel'); }
+
+  function applyClassesToPanel(visible){
+    var panel = panelEl();
+    if (panel) panel.classList.toggle('tw-hidden', !visible);
+  }
+
+  function setPanelVisible(visible){
+    suppressEcho = true;
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !visible);
+    applyClassesToPanel(visible);
+    // Clear flag after the MutationObserver has had a chance to fire for this
+    // change so we don't echo our own host-driven toggles back to the host.
+    Promise.resolve().then(function(){ suppressEcho = false; });
+  }
+
+  function postState(){
+    var panel = panelEl();
+    if (!panel) return;
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-panel-state',
+        visible: !panel.classList.contains('tw-hidden'),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function postAvailability(){
+    try {
+      parent.postMessage({
+        type: 'od:tweaks-available',
+        available: !!panelEl(),
+      }, '*');
+    } catch (e) {}
+  }
+
+  function attachObserver(){
+    var panel = panelEl();
+    if (!panel || observer) return;
+    observer = new MutationObserver(function(){
+      if (suppressEcho) return;
+      postState();
+    });
+    observer.observe(panel, { attributes: true, attributeFilter: ['class'] });
+  }
+
+  function onReady(){
+    // Capture the panel authored visibility BEFORE we apply the host hidden
+    // attribute. The bridge sets data-od-tweaks-hidden synchronously in head
+    // (before the body parses), so on entry to onReady the attribute is
+    // always present even though the artifact may have authored the panel
+    // as default-visible. Reading the panel class first is the only place
+    // we can still observe the author intent. Then drive the attribute,
+    // classes, and posted state from that captured value so a default
+    // visible tw-panel reports visible:true and the toolbar toggle starts
+    // ON. Issue surfaced in PR #1643 review.
+    var panel = panelEl();
+    var initialVisible = !!panel && !panel.classList.contains('tw-hidden');
+    document.documentElement.toggleAttribute('data-od-tweaks-hidden', !initialVisible);
+    applyClassesToPanel(initialVisible);
+    attachObserver();
+    postAvailability();
+    // Post the captured initial visibility so the toolbar toggle reflects
+    // the default state on mount. Without this the toggle reads OFF while
+    // a default-visible tw-panel artifact clearly shows its panel and the
+    // user would have to click toggle-on then toggle-off to actually hide.
+    postState();
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onReady);
+  } else {
+    onReady();
+  }
+
+  window.addEventListener('message', function(ev){
+    if (!ev.data || ev.data.type !== 'od:tweaks-panel-visible') return;
+    setPanelVisible(!!ev.data.visible);
+  });
+})();</script></head>
+<body>
+
+<header data-od-id="path-0">
+  <div class="header-inner" data-od-id="path-0-0">
+    <span class="wordmark">Sec<span>DB</span></span>
+    <span class="header-badge">Research</span>
+  </div>
+</header>
+
+<main data-od-id="path-1">
+
+  <p class="hero-label">证券研究知识库</p>
+  <h1 class="hero-title" data-od-id="path-1-1">基于券商研报的投资决策助手</h1>
+  <p class="hero-sub">输入您关心的问题，自动检索相关研报，生成结构化的推理过程与投资建议。</p>
+
+  <div class="search-wrap" data-od-id="path-1-3">
+    <input class="search-input" id="queryInput" type="text" placeholder="例如：比亚迪未来三年的营收增速预期是多少？" autocomplete="off" data-od-id="path-1-3-0">
+    <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path>
+    </svg>
+    <button class="search-btn" id="searchBtn" data-od-id="path-1-3-2">查询答案</button>
+  </div>
+
+  <div class="results" id="resultsArea" data-od-id="path-1-4">
+
+    <div class="query-echo" id="queryEcho" data-od-id="path-1-4-0">
+      当前查询：<strong>比亚迪未来三年营收增速预期是多少？</strong>
+    </div>
+
+    <!-- Block 1: 分布式推理 -->
+    <div class="result-block b-reasoning" data-od-id="path-1-4-1">
+      <div class="block-header">
+        <div class="block-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline>
+          </svg>
+        </div>
+        <span class="block-title">分布式推理</span>
+        <span class="block-badge">4 步</span>
+      </div>
+      <div class="block-body">
+        <div class="reasoning-steps">
+          <div class="reasoning-step">
+            <div class="step-num">1</div>
+            <div class="step-text">根据<span>比亚迪 2024 年报</span>，全年营收约 6,023 亿元，同比 +29.5%；2025 年 Q1 营收 1,703 亿元，同比 +36%。</div>
+          </div>
+          <div class="reasoning-step">
+            <div class="step-num">2</div>
+            <div class="step-text">综合<span>中信证券</span>、<span>国泰君安</span>、<span>广发证券</span>三家券商预测，2025–2027 年营收增速分别为 <em>+28%</em>、<em>+22%</em>、<em>+18%</em>（年均）。</div>
+          </div>
+          <div class="reasoning-step">
+            <div class="step-num">3</div>
+            <div class="step-text">增长驱动来自：① 海外销量占比提升（2024 年海外占比 36%，目标 2027 年 50%+）；② 智能化车型迭代带动 ASP 提升。</div>
+          </div>
+          <div class="reasoning-step">
+            <div class="step-num">4</div>
+            <div class="step-text">中性情形下，到 2027 年营收规模约 <em>1.06 万亿元</em>，三年复合增速约 <em>22.6%</em>。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Block 2: 推理摘要 -->
+    <div class="result-block b-summary" data-od-id="path-1-4-2">
+      <div class="block-header">
+        <div class="block-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line>
+            <line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line>
+          </svg>
+        </div>
+        <span class="block-title">推理摘要</span>
+        <span class="block-badge">3 条</span>
+      </div>
+      <div class="block-body">
+        <p class="summary-lead">比亚迪未来三年营收有望保持 20% 以上的复合增速，海外扩张与产品结构升级是核心驱动力。</p>
+        <ul class="summary-bullets">
+          <li>2025–2027 年营收增速预测：28% / 22% / 18%，复合增速约 22.6%</li>
+          <li>海外销量占比目标从 36%（2024）提升至 50%+（2027）</li>
+          <li>智能化车型迭代将驱动平均单车售价（ASP）持续提升</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Block 3: 相关页面 -->
+    <div class="result-block b-pages" data-od-id="path-1-4-3">
+      <div class="block-header">
+        <div class="block-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+          </svg>
+        </div>
+        <span class="block-title">相关页面</span>
+        <span class="block-badge">4 篇</span>
+      </div>
+      <div class="block-body">
+        <div class="pages-grid">
+          <div class="page-card">
+            <div class="page-source">中信证券</div>
+            <div class="page-title">比亚迪深度跟踪报告：海外放量与单车盈利双击，维持「买入」评级</div>
+            <div class="page-meta">
+              <span class="page-date">2025-03-12</span>
+              <span class="page-score">相关度 96%</span>
+            </div>
+          </div>
+          <div class="page-card">
+            <div class="page-source">国泰君安</div>
+            <div class="page-title">新能源汽车行业年度策略：比亚迪龙头地位稳固，出海加速业绩增长</div>
+            <div class="page-meta">
+              <span class="page-date">2025-01-08</span>
+              <span class="page-score">相关度 91%</span>
+            </div>
+          </div>
+          <div class="page-card">
+            <div class="page-source">广发证券</div>
+            <div class="page-title">比亚迪 2024 年报点评：业绩超预期，智能化加速布局打开估值空间</div>
+            <div class="page-meta">
+              <span class="page-date">2025-04-22</span>
+              <span class="page-score">相关度 88%</span>
+            </div>
+          </div>
+          <div class="page-card">
+            <div class="page-source">华泰证券</div>
+            <div class="page-title">比亚迪 2025 年 Q1 财报前瞻：销量增势强劲，海外工厂产能持续爬坡</div>
+            <div class="page-meta">
+              <span class="page-date">2025-04-03</span>
+              <span class="page-score">相关度 84%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Block 4: 最终答案 -->
+    <div class="result-block b-answer" data-od-id="path-1-4-4">
+      <div class="block-header">
+        <div class="block-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"></circle>
+            <line x1="12" y1="8" x2="12" y2="12"></line>
+            <line x1="12" y1="16" x2="12.01" y2="16"></line>
+          </svg>
+        </div>
+        <span class="block-title">最终答案</span>
+        <span class="block-badge">综合 4 篇研报</span>
+      </div>
+      <div class="block-body">
+        <p class="answer-text">
+          综合中信证券、国泰君安、广发证券及华泰证券的研报预测，比亚迪未来三年（2025–2027）营收复合增速预计维持在 <span class="highlight">22%–23%</span> 区间。具体来看：
+        </p>
+        <p class="answer-text" style="margin-top:12px">
+          2025 年增速约 <strong>+28%</strong>（海外放量），2026 年增速约 <strong>+22%</strong>（产品结构优化），2027 年增速约 <strong>+18%</strong>（渗透率提升趋于平稳）。到 2027 年营收规模有望突破 <strong>1 万亿元</strong>，三年复合增速约 <strong>22.6%</strong>。
+        </p>
+        <div class="answer-disclaimer">
+          ⚠️ 本答案由 AI 综合多篇券商研报生成，仅供参考，不构成投资建议。投资有风险，决策需审慎。
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Skeleton shown while loading -->
+  <div class="skeleton" id="skeleton" data-od-id="path-1-5">
+    <div class="skeleton-row" data-od-id="path-1-5-0"><div class="skeleton-line short"></div><div class="skeleton-line"></div><div class="skeleton-line"></div></div>
+    <div class="skeleton-row" data-od-id="path-1-5-1"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div>
+    <div class="skeleton-row" data-od-id="path-1-5-2"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div>
+    <div class="skeleton-row" data-od-id="path-1-5-3"><div class="skeleton-line short"></div><div class="skeleton-line"></div></div>
+  </div>
+
+</main>
+
+<script>
+  (function () {
+    var input = document.getElementById('queryInput');
+    var btn = document.getElementById('searchBtn');
+    var echo = document.getElementById('queryEcho');
+    var body = document.body;
+
+    function getQuery() {
+      return input.value.trim() || '比亚迪未来三年营收增速预期是多少？';
+    }
+
+    function renderEcho(q) {
+      echo.innerHTML = '当前查询：<strong>' + q + '</strong>';
+      echo.style.display = 'block';
+    }
+
+    btn.addEventListener('click', function () {
+      var q = getQuery();
+      renderEcho(q);
+      body.classList.add('loading');
+      setTimeout(function () { body.classList.remove('loading'); }, 1400);
+    });
+
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); btn.click(); }
+    });
+
+    renderEcho('比亚迪未来三年营收增速预期是多少？');
+  })();
+</script>
+
+
+<script data-od-snapshot-bridge="">(function(){
+  function copyComputedStyle(source, target){
+    if (!source || !target || source.nodeType !== 1 || target.nodeType !== 1) return;
+    var computed = window.getComputedStyle(source);
+    var style = target.getAttribute('style') || '';
+    for (var i = 0; i < computed.length; i++){
+      var prop = computed[i];
+      style += prop + ':' + computed.getPropertyValue(prop) + ';';
+    }
+    target.setAttribute('style', style);
+  }
+  function syncElementState(source, target){
+    var tag = source.tagName ? source.tagName.toLowerCase() : '';
+    if (tag === 'img' && source.currentSrc) target.setAttribute('src', source.currentSrc);
+    if (tag === 'input' || tag === 'textarea') target.setAttribute('value', source.value || '');
+    if (tag === 'canvas') {
+      try {
+        var img = document.createElement('img');
+        img.setAttribute('src', source.toDataURL('image/png'));
+        img.setAttribute('style', target.getAttribute('style') || '');
+        target.parentNode && target.parentNode.replaceChild(img, target);
+      } catch (_) {}
+    }
+  }
+  function inlineSnapshotStyles(originalRoot, cloneRoot){
+    copyComputedStyle(originalRoot, cloneRoot);
+    syncElementState(originalRoot, cloneRoot);
+    var originals = originalRoot.querySelectorAll('*');
+    var clones = cloneRoot.querySelectorAll('*');
+    var count = Math.min(originals.length, clones.length);
+    for (var i = 0; i < count; i++){
+      copyComputedStyle(originals[i], clones[i]);
+      syncElementState(originals[i], clones[i]);
+    }
+    var scripts = cloneRoot.querySelectorAll('script');
+    for (var s = scripts.length - 1; s >= 0; s--) scripts[s].remove();
+  }
+  function waitForImages(){
+    var imgs = Array.prototype.slice.call(document.images || []);
+    return Promise.all(imgs.map(function(img){
+      if (img.complete) return Promise.resolve();
+      return new Promise(function(resolve){
+        img.addEventListener('load', resolve, { once: true });
+        img.addEventListener('error', resolve, { once: true });
+      });
+    }));
+  }
+  function renderSnapshot(id){
+    var w = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+    var h = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
+    var dpr = window.devicePixelRatio || 1;
+    var docW = Math.max(w, document.documentElement.scrollWidth || 0, document.body ? document.body.scrollWidth : 0);
+    var docH = Math.max(h, document.documentElement.scrollHeight || 0, document.body ? document.body.scrollHeight : 0);
+    var clone = document.documentElement.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/1999/xhtml');
+    inlineSnapshotStyles(document.documentElement, clone);
+    var serializer = new XMLSerializer();
+    var html = serializer.serializeToString(clone);
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+      '<foreignObject x="' + (-window.scrollX || 0) + '" y="' + (-window.scrollY || 0) + '" width="' + docW + '" height="' + docH + '">' +
+      html +
+      '</foreignObject></svg>';
+    var img = new Image();
+    img.onload = function(){
+      try {
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        var ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('no 2d context');
+        ctx.scale(dpr, dpr);
+        ctx.drawImage(img, 0, 0, w, h);
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, dataUrl: canvas.toDataURL('image/png'), w: canvas.width, h: canvas.height }, '*');
+      } catch (err) {
+        window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: String(err && err.message || err) }, '*');
+      }
+    };
+    img.onerror = function(){
+      window.parent.postMessage({ type: 'od:snapshot:result', id: id, error: 'snapshot image failed' }, '*');
+    };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:snapshot' || !data.id) return;
+    waitForImages().then(function(){ renderSnapshot(String(data.id)); });
+  });
+})();</script><script data-od-srcdoc-transport-activation="">(function(){
+  window.addEventListener('message', function(ev){
+    var data = ev && ev.data;
+    if (!data || data.type !== 'od:srcdoc-transport-activate' || typeof data.html !== 'string') return;
+    document.open();
+    document.write(data.html);
+    document.close();
+  });
+})();</script></body></html>
