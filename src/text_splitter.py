@@ -241,6 +241,9 @@ class TextSplitter():
                             # 需要强制分割（按HTML标签或直接截断）
                             if current_tokens > chunk_size and len(current_parts) == 1:
                                 part = current_parts[0]
+                                # 提取表格表头，分割时保留
+                                thead_match = re.search(r'<thead>.*?</thead>', part, re.DOTALL)
+                                table_header = thead_match.group() if thead_match else ""
                                 # 直接按HTML标签分割表格
                                 html_parts = re.split(r'(<tr>|</tr>|<td>|</td>)', part)
                                 sub_buffer = []
@@ -249,11 +252,13 @@ class TextSplitter():
                                 for hp in html_parts:
                                     hp_tokens = len(enc.encode(hp))
                                     if sub_tokens + hp_tokens > chunk_size and sub_buffer:
-                                        # 输出当前子chunk
+                                        # 输出当前子chunk，带表头前缀
                                         sub_text = ''.join(sub_buffer)
-                                        if first and current_title:
-                                            sub_text = current_title + '\n' + sub_text
+                                        if first and (current_title or table_header):
+                                            prefix = current_title + '\n' + table_header if current_title else table_header
+                                            sub_text = prefix + '\n' + sub_text
                                             current_title = ""
+                                            table_header = ""
                                         flush()
                                         all_chunks.append({
                                             'id': chunk_id,
@@ -272,9 +277,11 @@ class TextSplitter():
                                 # 处理剩余
                                 if sub_buffer:
                                     sub_text = ''.join(sub_buffer)
-                                    if first and current_title:
-                                        sub_text = current_title + '\n' + sub_text
+                                    if first and (current_title or table_header):
+                                        prefix = current_title + '\n' + table_header if current_title else table_header
+                                        sub_text = prefix + '\n' + sub_text
                                         current_title = ""
+                                        table_header = ""
                                     flush()
                                     all_chunks.append({
                                         'id': chunk_id,

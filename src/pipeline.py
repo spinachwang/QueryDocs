@@ -196,7 +196,7 @@ base_config = RunConfig(
 )
 
 parent_document_retrieval_config = RunConfig(
-    parent_document_retrieval=True,
+    parent_document_retrieval=False,
     parallel_requests=20,
     submission_file=True,
     pipeline_details="Custom pdf parsing + vDB + Router + Parent Document Retrieval + SO CoT; llm = GPT-4o",
@@ -207,7 +207,7 @@ parent_document_retrieval_config = RunConfig(
 ## 这里
 max_config = RunConfig(
     use_serialized_tables=False,
-    parent_document_retrieval=True,
+    parent_document_retrieval=False,
     llm_reranking=True,
     parallel_requests=4,
     submission_file=True,
@@ -222,7 +222,7 @@ configs = {"base": base_config,
            "max": max_config,
            "minimax": RunConfig(
                use_serialized_tables=False,
-               parent_document_retrieval=True,
+               parent_document_retrieval=False,
                llm_reranking=True,
                parallel_requests=4,
                submission_file=True,

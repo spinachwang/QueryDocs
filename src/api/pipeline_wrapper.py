@@ -15,7 +15,7 @@ def get_pipeline() -> Pipeline:
         # Use MiniMax config - same as configs["minimax"] in pipeline.py
         api_config = RunConfig(
             use_serialized_tables=False,
-            parent_document_retrieval=True,
+            parent_document_retrieval=False,
             llm_reranking=True,
             parallel_requests=4,
             submission_file=True,

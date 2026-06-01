@@ -204,7 +204,7 @@ SPLITTABLE_TYPES = {'paragraph', 'list'}
 |------|----------|
 | `title` | 标题不单独成chunk，与下一个内容组合；超长标题作为前缀保留 |
 | `paragraph` | 按句子分割，支持chunk_size和overlap |
-| `table` | 按HTML标签分割(`<tr>`, `<td>`)，保持表格结构 |
+| `table` | 按HTML标签分割(`<tr>`, `<td>`)，超长分割时保留表头(`<thead>`) |
 | `list` | 作为整体保留，或按句子边界分割 |
 | `image` | 保留图片路径引用 |
 
@@ -216,7 +216,7 @@ def split_content_list_v2(content_list_v2_path, output_path,
     # 1. 按页遍历MinerU的content_list_v2.json
     # 2. 遇到标题暂存，与后续内容组合
     # 3. 超长内容按句子分割，保持语义完整
-    # 4. 表格按HTML标签边界分割
+    # 4. 表格按HTML标签边界分割，超长时保留表头(<thead>)
     # 5. 输出JSON格式的chunks
 ```
 
@@ -593,6 +593,7 @@ QueryDocs/
 - **原子类型** (`title`, `table`, `image`): 不可切断，保证结构完整
 - **可分割类型** (`paragraph`, `list`): 按自然句子边界分割
 - 标题与后续内容组合，超长时以标题为前缀
+- **表格超长分割时保留表头**（`<thead>`），确保列语义不丢失
 
 ### 8.2 混合检索 + LLM重排
 
