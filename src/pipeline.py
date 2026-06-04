@@ -56,7 +56,7 @@ class RunConfig:
     use_bm25_db: bool = False
     llm_reranking: bool = False
     llm_reranking_sample_size: int = 30
-    top_n_retrieval: int = 10
+    top_n_retrieval: int = 5
     parallel_requests: int = 1 # 并行的数量，需要限制，否则qwen-turbo会超出阈值
     pipeline_details: str = ""
     submission_file: bool = True

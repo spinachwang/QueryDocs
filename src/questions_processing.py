@@ -175,6 +175,7 @@ class QuestionsProcessor:
             validated_pages = self._validate_page_references(pages, retrieval_results)
             answer_dict["relevant_pages"] = validated_pages
             answer_dict["references"] = self._extract_references(validated_pages, company_name)
+        answer_dict["contexts"] = [r.get("text", "") for r in retrieval_results]
         print(f"[计时] [get_answer_for_company] 总耗时: {t6-t0:.2f} 秒")
         return answer_dict
 

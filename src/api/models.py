@@ -18,6 +18,7 @@ class QAResponse(BaseModel):
     relevant_pages: list[int]
     final_answer: str
     references: list[Reference]
+    contexts: list[str] = []
 
 
 class HealthResponse(BaseModel):

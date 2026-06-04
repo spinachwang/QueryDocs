@@ -20,23 +20,25 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                              用户交互层                                       │
-│  ┌─────────────────┐     ┌─────────────────────┐  ┌──────────────────────┐ │
-│  │   main.py       │     │   app_streamlit.py │  │   src/api/main.py    │ │
-│  │   (CLI入口)     │     │   (Web界面)          │  │   (FastAPI服务)      │ │
-│ └────────┬────────┘     └──────────┬──────────┘  └──────────┬───────────┘ │
-└───────────┼─────────────────────────┼────────────────────────┼─────────────┘
-            │                         │                        │
-            ▼                         ▼                        ▼
+│  ┌─────────────────────────────┐         ┌──────────────────────────────┐   │
+│  │   main.py                   │         │   src/api/main.py            │   │
+│  │   (CLI 入口: 6 个子命令)     │         │   (FastAPI 服务)              │   │
+│  └──────────────┬──────────────┘         └──────────────┬───────────────┘   │
+│                 │                                       │                   │
+└─────────────────┼───────────────────────────────────────┼───────────────────┘
+                  │                                       │
+                  ▼                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                             管道编排层 (Pipeline)                             │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ src/pipeline.py ││
-│  │  • parse_pdf_reports()      - 并行PDF解析                                ││
-│  │  • chunk_reports()          - 智能文本分块                               ││
-│  │  • create_vector_dbs()      - 构建FAISS向量库                           ││
-│  │  • create_bm25_db()         - 构建BM25索引                              ││
-│  │  • process_questions()      - 批量问题处理                               ││
-│  │  • answer_single_question() - 单问题推理 ││
+│  │  src/pipeline.py                                                         ││
+│  │   • Pipeline.__init__()        - 加载路径与 RunConfig                      ││
+│  │   • process_questions()        - 批量问题处理 → answers_*.json            ││
+│  │   • answer_single_question()  - 单问题推理（供 API 调用）                 ││
+│  │                                                                          ││
+│  │  ⚠️ Pipeline 类本身只做"在线推理"编排；离线索引（PDF 解析、分块、         ││
+│  │  向量化、BM25 索引、表格序列化）由 CLI 子命令直接驱动对应模块，            ││
+│  │  不走 Pipeline 类。                                                        ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────────┘
             │
@@ -139,23 +141,31 @@
 
 | 文件 | 说明 |
 |------|------|
-| `main.py` | CLI命令行入口，支持 `download-models`, `parse-pdfs`, `serialize-tables`, `process-reports`, `process-questions` 等命令 |
-| `src/api/main.py` | FastAPI Web服务，提供RESTful API接口 |
-| `app_streamlit.py` | (已废弃) Web界面入口 |
+| `main.py` | CLI 命令行入口（Click），提供 6 个子命令：`parse-pdfs` / `serialize-tables` / `process-reports` / `build-vectors` / `build-bm25` / `process-questions` |
+| `src/api/main.py` | FastAPI Web 服务入口，注册 `qa` 路由与 `/api/health`、`/` |
+| `src/api/routers/qa.py` | `POST /api/qa/ask` 单问题推理路由 |
+| `src/api/pipeline_wrapper.py` | 惰性单例的 Pipeline 包装，API 启动时按 `minimax` 配置初始化一次 |
+| `frontend/` | React + TypeScript + Vite 前端（独立子项目） |
 
 ### 3.2 管道编排 (Pipeline)
 
 **文件**: `src/pipeline.py`
 
-核心类 `Pipeline` 协调整个RAG管道流程：
+`Pipeline` 类主要承担**在线推理编排**，负责把检索 + 重排 + LLM 推理串起来：
 
 ```
-PDF输入 → 解析 → 分块 → 向量化 → 存储 → 检索 → 重排 → LLM推理 → 答案输出
+用户问题 → 公司匹配 → 检索 → (重排) → LLM 推理 → 页码校验 → 结构化答案
 ```
 
 **关键配置**:
 - `RunConfig`: 运行时参数配置（是否使用序列化表格、父文档检索、LLM重排、并发数等）
 - `PipelineConfig`: 路径配置（数据目录、输出目录、数据库路径）
+
+**实际方法**:
+- `process_questions()`: 批量读取 `questions.json`，输出 `answers{config_suffix}.json`（同名文件自动加编号后缀）
+- `answer_single_question(question, kind)`: 单问题即时推理，供 FastAPI 路由调用
+
+> **离线索引（PDF 解析、分块、向量化、BM25 索引、表格序列化）由 `main.py` 的子命令直接驱动对应模块**，不通过 `Pipeline` 类。`Pipeline` 类里也**没有** `parse_pdf_reports / chunk_reports / create_vector_dbs / create_bm25_db` 这类方法。
 
 ### 3.3 PDF解析
 
@@ -508,14 +518,21 @@ class RunConfig:
 
 ### 5.2 预定义配置
 
+`process-questions --config` 实际可选项（定义于 [src/pipeline.py](src/pipeline.py#L220-L235)）：
+
+| 配置名 | 说明 | LLM / 关键参数 |
+|--------|------|---------------|
+| `base` | 基础配置 | GPT-4o-mini，`parallel_requests=10` |
+| `pdr` | 父文档检索 | GPT-4o |
+| `max` | LLM 重排 + 并行 | Qwen-Turbo，`parallel_requests=4` |
+| `minimax` | LLM 重排 + 自定义路径 | MiniMax-M2.7，`parallel_requests=4` |
+
+`process-reports --config` 用的是另一组配置 `preprocess_configs`（[src/pipeline.py](src/pipeline.py#L188-L189)），只控制离线预处理：
+
 | 配置名 | 说明 |
 |--------|------|
-| `base` | 基础配置，GPT-4o-mini |
-| `pdr` | 启用父文档检索 |
-| `max` | 最佳性能配置: 父文档检索 + LLM重排 + Qwen Turbo |
-| `max_nst_o3m` | o3-mini模型版本 |
-| `gemini_thinking` | Gemini全上下文模式 |
-| `minimax` | MiniMax-M2.7模型配置 |
+| `ser_tab` | 解析结果写入 `03_reports_markdown_ser_tab/`（包含表格序列化产物） |
+| `no_ser_tab` | 解析结果写入 `03_reports_markdown/`（不含表格序列化） |
 
 ---
 
@@ -523,45 +540,60 @@ class RunConfig:
 
 ```
 QueryDocs/
-├── main.py                    # CLI入口
-├── requirements.txt           # 依赖
+├── main.py                    # CLI 入口（6 个子命令）
+├── requirements.txt
+├── env                        # 环境变量模板（需改名为 .env）
 ├── setup.py
+├── questions.json             # 待回答问题
+├── subset.csv                 # 公司清单 (sha1, file_name, company_name)
 │
 ├── src/
 │   ├── __init__.py
-│   ├── pipeline.py            # 主管道
-│   ├── pdf_mineru.py          # PDF解析 (MinerU API)
-│   ├── text_splitter.py       # 文本分块 (类型感知)
-│   ├── ingestion.py           # 索引构建 (FAISS/BM25)
-│   ├── retrieval.py           # 检索器
-│   ├── reranking.py           # LLM重排
-│   ├── questions_processing.py # 问题处理
-│   ├── api_requests.py        # 多API处理器
-│   ├── prompts.py            # 提示词模板
-│   ├── tables_serialization.py # 表格序列化
+│   ├── pipeline.py            # 主管道 (Pipeline / RunConfig / PipelineConfig / configs)
+│   ├── pdf_mineru.py          # PDF 解析 (MinerU API)
+│   ├── parsed_reports_merging.py # 解析结果规整
+│   ├── text_splitter.py       # 类型感知分块
 │   ├── process_chunks.py      # 批量分块处理
+│   ├── ingestion.py           # FAISS + BM25 索引构建
+│   ├── retrieval.py           # VectorRetriever / BM25Retriever / HybridRetriever
+│   ├── reranking.py           # LLMReranker / JinaReranker
+│   ├── questions_processing.py # 问答主逻辑 (QuestionsProcessor)
+│   ├── tables_serialization.py # 表格 LLM 序列化 (TableSerializer)
+│   ├── prompts.py             # 提示词 + Pydantic Schema
+│   ├── api_requests.py        # 多 API 处理器 (BaseOpenai / BaseDashscope / BaseMiniMax / BaseIBM / BaseGemini)
+│   ├── api_request_parallel_processor.py # 并发限流批处理
 │   │
-│   └── api/ # FastAPI Web服务
+│   └── api/                   # FastAPI Web 服务
 │       ├── __init__.py
 │       ├── main.py
-│       ├── models.py
-│       ├── pipeline_wrapper.py
+│       ├── models.py          # QARequest / QAResponse / Reference
+│       ├── pipeline_wrapper.py # 惰性 Pipeline 单例
 │       └── routers/
 │           ├── __init__.py
-│           └── qa.py
+│           └── qa.py          # POST /api/qa/ask
 │
-├── data/                      # 数据目录
+├── data/
 │   └── stock_data/
-│       ├── subset.csv         # 公司列表
-│       ├── questions.json    # 问题列表
-│       ├── pdf_reports/       # 原始PDF
-│       └── debug_data/       # 中间结果
-│           └── *_reports_markdown/
-│           └── chunked_reports/
-│           └── databases/
+│       ├── subset.csv
+│       ├── questions.json
+│       ├── pdf_reports/       # 原始 PDF
+│       ├── debug_data/
+│       │   ├── 03_reports_markdown/         # MinerU 解析结果
+│       │   ├── 03_reports_markdown_ser_tab/ # 表格序列化版本
+│       │   ├── chunked_reports/             # 分块结果
+│       │   └── databases/
+│       │       ├── vector_dbs/              # FAISS 向量库
+│       │       └── bm25_dbs/                # BM25 pickle
+│       └── answers_*.json     # 批量问答结果
+│
+├── frontend/                  # React + TypeScript + Vite 前端
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.ts
 │
 └── docs/
-    └── architecture.md       # 本文档
+    ├── architecture.md        # 本文档
+    └── src_modules_overview.md # src 模块速查
 ```
 
 ---
@@ -652,35 +684,71 @@ QueryDocs/
 
 ## 9. API接口
 
-###9.1 REST API
+### 9.1 REST API
 
-**文件**: `src/api/main.py`
+**入口文件**: `src/api/main.py`（FastAPI app）
 
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/` | 服务信息 |
+| GET | `/api/health` | 健康检查，返回 `{"status": "ok"}` |
+| POST | `/api/qa/ask` | 单问题推理（**注意是 `/ask` 而非 `/answer`**） |
+
+**请求** `POST /api/qa/ask`：
+
+```json
+{
+  "question": "请简要总结某公司2022年主营业务内容。",
+  "kind": "string"
+}
 ```
-GET  /api/health          - 健康检查
-GET  /                    - 服务信息
-POST /api/qa/answer        - 单问题推理
+
+`kind` 可选值：`string`（默认）/ `number` / `boolean` / `names`。
+
+**响应** `QAResponse`（定义于 [src/api/models.py](src/api/models.py)）：
+
+```json
+{
+  "step_by_step_analysis": "分步推理（≥5 步 ≥150 字）",
+  "reasoning_summary": "推理摘要",
+  "relevant_pages": [1, 2, 3],
+  "final_answer": "最终答案或 'N/A'",
+  "references": [
+    { "pdf_sha1": "stock_10001", "page_index": 1 }
+  ]
+}
 ```
 
-**请求示例**:
+> `references` 字段是后端从 `QAResponse` 中**额外补的**结构化引用（`pdf_sha1` 取自 `subset.csv`，`page_index` 对齐 `relevant_pages`），便于前端做页码跳转。`relevant_pages` 仅给页码列表，`references` 才把"页码"映射回"具体 PDF"。
+
+**curl 示例**：
+
 ```bash
-curl -X POST http://localhost:8000/api/qa/answer \
+curl -X POST http://localhost:8000/api/qa/ask \
   -H "Content-Type: application/json" \
   -d '{"question": "请简要总结某公司2022年主营业务内容。", "kind": "string"}'
 ```
 
-### 9.2 CLI批量处理
+### 9.2 CLI 批量处理
 
 ```bash
-# 解析PDF
+# 1) 解析 PDF
 python main.py parse-pdfs --parallel --max-workers 10
 
-# 处理报告（分块+向量化）
+# 2) （可选）表格序列化
+python main.py serialize-tables --max-workers 10
+
+# 3) 报告分块
 cd data/stock_data
 python ../../main.py process-reports --config ser_tab
 
-# 处理问题
-python ../../main.py process-questions --config max_nst_o3m
+# 4) 构建向量库 / BM25
+python main.py build-vectors
+python main.py build-bm25
+
+# 5) 批量问答（回到项目根目录）
+cd ../..
+python main.py process-questions --config minimax
 ```
 
 ---
@@ -690,8 +758,9 @@ python ../../main.py process-questions --config max_nst_o3m
 1. **API依赖**: 高度依赖外部API服务可用性
 2. **GPU需求**: PDF解析在GPU环境下效率更高
 3. **无测试代码**: 缺少单元测试和集成测试
+4. **`Pipeline` 类与 CLI 子命令错位**: 当前 `Pipeline` 只承担在线推理编排，离线索引（解析 / 分块 / 向量化 / BM25）由 CLI 直接驱动对应模块，原 `__main__` 块里调用的 `chunk_reports / create_vector_dbs` 在 `Pipeline` 类中并不存在
 
 ---
 
-*文档版本: 2.0*
-*最后更新: 2026-05-31*
+*文档版本: 2.1*
+*最后更新: 2026-06-01*

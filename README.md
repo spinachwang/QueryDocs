@@ -43,7 +43,7 @@ QueryDocs 是一个基于 RAG（检索增强生成）技术的年报智能问答
 
 #### 7. 结构化输出 + 思维链推理
 - Pydantic模型验证输出格式
-- 思维链推理：`step_by_step_analysis`字段进行分步推理
+- 思维链推理：采用链式推理（chain-of-thought reasoning）进行结构化输出
 - 不同答案类型使用不同提示模板：
   - `NumberPrompt`：严格指标匹配，拒绝不等价指标
   - `BooleanPrompt`：是/否类答案
@@ -154,48 +154,182 @@ def _validate_page_references(self, claimed_pages, retrieval_results):
 
 ### 快速开始
 
+#### 1. 安装与配置
+
 ```bash
 # 安装依赖
 pip install -r requirements.txt
 
-# 配置API密钥
-cp .env.example .env
+# 配置API密钥（将 env 文件改名为 .env 并填入真实 key）
+cp env .env
+# 必需: MINERU_API_KEY（PDF解析）
+# 按需: DASHSCOPE_API_KEY / OPENAI_API_KEY / MINIMAX_API_KEY（推理与嵌入）
+# 可选: JINA_API_KEY / GEMINI_API_KEY（重排/多模型）
+```
 
-# 解析PDF
+#### 2. 离线构建索引
+
+CLI 入口 (`main.py`) 按以下顺序串联整个流水线：
+
+```bash
+# 1) 解析 PDF（云端 MinerU 解析 → content_list_v2.json）
 python main.py parse-pdfs --parallel --max-workers 10
 
-# 处理报告（分块+向量化）
-cd data/stock_data
-python ../../main.py process-reports --config ser_tab
+# 2) （可选）表格序列化：把表格 HTML 转成可被检索的结构化信息块
+python main.py serialize-tables --max-workers 10
 
-# 处理问题
-python ../../main.py process-questions --config max
+# 3) 报告分块：按类型感知策略切分到 chunked_reports/
+python main.py process-reports --config no_ser_tab   # 不含表格序列化
+python main.py process-reports --config ser_tab      # 含表格序列化
 
-# 或启动API服务
+# 4) 构建向量库（FAISS）和 BM25 索引（按需）
+python main.py build-vectors
+python main.py build-bm25
+```
+
+> **配置字典说明**：`process-reports` 用的是 [`preprocess_configs`](src/pipeline.py#L188-L189)，只有 `ser_tab / no_ser_tab` 两个选项；`process-questions` 用的是 [`configs`](src/pipeline.py#L220-L235)，见下方"运行配置"小节。
+
+#### 3. 在线问答（CLI 批量）
+
+```bash
+python main.py process-questions --config minimax
+# 可选 --config: base / pdr / max / minimax
+```
+
+#### 4. 启动 FastAPI 服务
+
+```bash
+# 方式 A：在项目根目录运行（推荐）
+uvicorn src.api.main:app --reload --port 8000
+
+# 方式 B：进入 src/api 运行
 cd src/api
 uvicorn main:app --reload --port 8000
+```
+
+#### 5. 启动前端（可选）
+
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
 ### 项目结构
 
 ```
 QueryDocs/
-├── main.py                 # CLI入口
+├── main.py                       # CLI 入口（Click 6 个子命令）
+├── requirements.txt
+├── env                           # 环境变量模板（需改名 .env）
+├── questions.json                # 待回答问题列表
+├── subset.csv                    # 公司清单（sha1, file_name, company_name）
+│
 ├── src/
-│   ├── pipeline.py        # 管道编排
-│   ├── pdf_mineru.py      # PDF解析 (MinerU API)
-│   ├── text_splitter.py   # 类型感知分块
-│   ├── ingestion.py       # 向量/BM25索引构建
-│   ├── retrieval.py       # 检索器 (向量/BM25/混合)
-│   ├── reranking.py       # LLM重排
-│   ├── questions_processing.py  # 问题处理
-│   ├── api_requests.py    # 多API处理器
-│   ├── prompts.py         # 提示词模板
-│   ├── tables_serialization.py  # 表格序列化
-│   ├── process_chunks.py  # 批量分块处理
-│   └── api/              # FastAPI服务
-└── data/stock_data/      # 数据目录
+│   ├── __init__.py
+│   ├── pipeline.py               # 主管道：RunConfig / PipelineConfig / Pipeline
+│   ├── pdf_mineru.py             # PDF 解析（MinerU 云端 API）
+│   ├── parsed_reports_merging.py # 解析结果规整为页文本
+│   ├── text_splitter.py          # 类型感知智能分块
+│   ├── process_chunks.py         # 批量分块（跳过 _p1-200 等拆分目录）
+│   ├── ingestion.py              # FAISS 向量库 + BM25 索引构建
+│   ├── retrieval.py              # VectorRetriever / BM25Retriever / HybridRetriever
+│   ├── reranking.py              # LLM/Jina 重排
+│   ├── questions_processing.py   # 单/多公司问答主逻辑
+│   ├── tables_serialization.py   # TableSerializer（LLM 表格 → 结构化信息块）
+│   ├── prompts.py                # 提示词 + Pydantic Schema
+│   ├── api_requests.py           # OpenAI/DashScope/MiniMax 多 API 统一封装
+│   ├── api_request_parallel_processor.py  # 并发限流批处理
+│   └── api/                      # FastAPI 服务
+│       ├── __init__.py
+│       ├── main.py               # FastAPI app 入口
+│       ├── models.py             # Pydantic 请求/响应模型
+│       ├── pipeline_wrapper.py   # 惰性单例 + Pipeline 初始化
+│       └── routers/
+│           ├── __init__.py
+│           └── qa.py             # POST /api/qa/ask 路由
+│
+├── data/stock_data/              # 数据目录
+│   ├── pdf_reports/              # 原始 PDF
+│   ├── questions.json            # 问题列表（同根目录副本）
+│   ├── subset.csv                # 公司清单（同根目录副本）
+│   ├── debug_data/
+│   │   ├── 03_reports_markdown/      # MinerU 解析结果（content_list_v2.json + full.md）
+│   │   ├── 03_reports_markdown_ser_tab/  # 表格序列化版本
+│   │   ├── chunked_reports/          # 分块结果
+│   │   └── databases/
+│   │       ├── vector_dbs/           # FAISS 向量库
+│   │       └── bm25_dbs/             # BM25 pickle
+│   └── answers_*.json            # 批量问答结果（按 config_suffix 自动编号）
+│
+├── frontend/                     # React + TypeScript + Vite 前端
+│   ├── src/
+│   ├── package.json
+│   └── vite.config.ts
+│
+└── docs/
+    ├── architecture.md           # 架构文档
+    └── src_modules_overview.md   # src 模块速查
 ```
+
+### CLI 子命令一览
+
+| 命令 | 配置参数 | 作用 |
+|------|----------|------|
+| `parse-pdfs` | `--parallel / --sequential`、`--max-workers` | 批量 MinerU 解析 PDF |
+| `serialize-tables` | `--max-workers` | LLM 表格序列化（可选步骤） |
+| `process-reports` | `--config {ser_tab,no_ser_tab}` | 报告分块到 `chunked_reports/` |
+| `build-vectors` | （无） | 构建 FAISS 向量库到 `vector_dbs/` |
+| `build-bm25` | （无） | 构建 BM25 索引到 `bm25_dbs/` |
+| `process-questions` | `--config {base,pdr,max,minimax}` | 批量问答并输出 `answers_*.json` |
+
+### 运行配置（`process-questions --config`）
+
+`configs` 字典在 [src/pipeline.py](src/pipeline.py#L220-L235) 定义：
+
+| 配置 | 主要特性 | LLM |
+|------|---------|-----|
+| `base` | 基础：向量检索 + 路由 + 结构化 CoT | GPT-4o-mini |
+| `pdr` | 父文档检索 | GPT-4o |
+| `max` | LLM 重排 + 并行 | Qwen-Turbo |
+| `minimax` | LLM 重排 + 自定义路径 | MiniMax-M2.7 |
+
+### API 接口
+
+服务启动后默认监听 `http://localhost:8000`，交互文档见 `/docs`。
+
+| Method | Path | 说明 |
+|--------|------|------|
+| GET | `/` | 服务信息 |
+| GET | `/api/health` | 健康检查 |
+| POST | `/api/qa/ask` | 单问题推理（CoT 答案 + 引用） |
+
+**请求** `POST /api/qa/ask`：
+
+```json
+{
+  "question": "请简要总结某公司2022年主营业务内容。",
+  "kind": "string"
+}
+```
+
+`kind` 可选：`string` / `number` / `boolean` / `names`，默认 `string`。
+
+**响应**：
+
+```json
+{
+  "step_by_step_analysis": "分步推理（≥5 步 150 字）",
+  "reasoning_summary": "推理摘要",
+  "relevant_pages": [1, 2, 3],
+  "final_answer": "最终答案或 'N/A'",
+  "references": [
+    { "pdf_sha1": "stock_10001", "page_index": 1 }
+  ]
+}
+```
+
+> `references` 字段由后端从检索结果中提取页码引用，与 `relevant_pages` 互为补充。
 
 ### 许可证
 

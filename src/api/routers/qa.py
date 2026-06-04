@@ -23,12 +23,19 @@ async def ask_question(request: QARequest):
                         page_index=ref.get("page_index", 0)
                     ))
 
+        raw_contexts = result.get("contexts", []) or []
+        truncated_contexts = [
+            c if isinstance(c, str) and len(c) <= 2000 else (c[:2000] + "..." if isinstance(c, str) else "")
+            for c in raw_contexts[:10]
+        ]
+
         return QAResponse(
             step_by_step_analysis=result.get("step_by_step_analysis", ""),
             reasoning_summary=result.get("reasoning_summary", ""),
             relevant_pages=result.get("relevant_pages", []),
             final_answer=result.get("final_answer", ""),
-            references=references
+            references=references,
+            contexts=truncated_contexts
         )
     except Exception as e:
         logger.error(f"Error processing question: {e}")

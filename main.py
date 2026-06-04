@@ -113,5 +113,26 @@ def process_questions(config):
     pipeline.process_questions()
 
 
+@cli.command()
+@click.option('--questions', default='questions.json', help='Path to questions.json')
+@click.option('--output', default='', help='Output directory (default: data/eval_results/{timestamp})')
+@click.option('--limit', type=int, default=None, help='Limit number of questions (smoke test)')
+@click.option('--skip-judge', is_flag=True, help='Skip RAGAS LLM judge; only dump collected samples')
+@click.option('--skip-embedder', is_flag=True, help='Skip embedder (drops answer_relevancy metric)')
+def evaluate(questions, output, limit, skip_judge, skip_embedder):
+    """Run RAGAS evaluation against the QueryDocs pipeline."""
+    from src.evaluation.evaluate import run_evaluation, EvalConfig
+
+    cfg = EvalConfig(
+        questions_path=questions,
+        output_dir=output,
+        limit=limit,
+        skip_judge=skip_judge,
+        skip_embedder=skip_embedder,
+    )
+    result = run_evaluation(cfg)
+    click.echo(str(result))
+
+
 if __name__ == '__main__':
     cli()
