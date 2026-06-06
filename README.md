@@ -219,7 +219,7 @@ npm run dev
 
 ```
 QueryDocs/
-├── main.py                       # CLI 入口（Click 6 个子命令）
+├── main.py                       # CLI 入口（Click 7 个子命令：parse-pdfs/serialize-tables/process-reports/build-vectors/build-bm25/process-questions/evaluate）
 ├── requirements.txt
 ├── env                           # 环境变量模板（需改名 .env）
 ├── questions.json                # 待回答问题列表
@@ -240,6 +240,10 @@ QueryDocs/
 │   ├── prompts.py                # 提示词 + Pydantic Schema
 │   ├── api_requests.py           # OpenAI/DashScope/MiniMax 多 API 统一封装
 │   ├── api_request_parallel_processor.py  # 并发限流批处理
+│   ├── evaluation/                # RAGAS 离线评估
+│   │   ├── __init__.py
+│   │   ├── ragas_judge.py         # 包装 MiniMax(DashScope) judge/embedder
+│   │   └── evaluate.py            # CLI 评估脚本（load_questions/build_samples/run_ragas/save_report）
 │   └── api/                      # FastAPI 服务
 │       ├── __init__.py
 │       ├── main.py               # FastAPI app 入口
@@ -248,6 +252,8 @@ QueryDocs/
 │       └── routers/
 │           ├── __init__.py
 │           └── qa.py             # POST /api/qa/ask 路由
+│
+├── tests/                        # pytest 单测（conftest + evaluate + ragas_judge）
 │
 ├── data/stock_data/              # 数据目录
 │   ├── pdf_reports/              # 原始 PDF
@@ -282,6 +288,7 @@ QueryDocs/
 | `build-vectors` | （无） | 构建 FAISS 向量库到 `vector_dbs/` |
 | `build-bm25` | （无） | 构建 BM25 索引到 `bm25_dbs/` |
 | `process-questions` | `--config {base,pdr,max,minimax}` | 批量问答并输出 `answers_*.json` |
+| `evaluate` | `--questions` / `--output` / `--limit` / `--skip-judge` / `--skip-embedder` | RAGAS 离线评估，输出 `report.csv` + `summary.md` |
 
 ### 运行配置（`process-questions --config`）
 
@@ -325,11 +332,73 @@ QueryDocs/
   "final_answer": "最终答案或 'N/A'",
   "references": [
     { "pdf_sha1": "stock_10001", "page_index": 1 }
+  ],
+  "contexts": [
+    "检索到的 chunk 原文（最多 10 条，每条 ≤ 2000 字符）",
+    "..."
   ]
 }
 ```
 
-> `references` 字段由后端从检索结果中提取页码引用，与 `relevant_pages` 互为补充。
+> `references` 字段由后端从检索结果中提取页码引用，与 `relevant_pages` 互为补充。`contexts` 字段返回检索到的切片原文，主要供 RAGAS 离线评估使用，前端一般不需要展示。
+
+### 离线评估（RAGAS）
+
+RAGAS 接入 [`src/evaluation/`](src/evaluation/)，用于量化比较切块/重排/表格序列化等改动带来的检索/生成质量变化。
+
+#### 评估指标（无监督版，不需金标样）
+
+| 指标 | 衡量 |
+|---|---|
+| `faithfulness` | 答案是否忠于检索到的 contexts |
+| `answer_relevancy` | 答案是否切题（需 embedder） |
+| `llm_context_precision_without_reference` | 检索的 chunks 是否相关 |
+| `nv_context_relevance` | 检索的 chunks 冗余度 |
+| `nv_response_groundedness` | 答案多大程度由检索内容支撑 |
+
+#### 模型分工
+
+| 角色 | 提供方 | 用途 |
+|---|---|---|
+| **Judge LLM** | MiniMax-M2.7（Anthropic 兼容 API，max_tokens=8192） | faithfulness / context_precision 等需要 LLM 打分的指标 |
+| **Embedder** | DashScope text-embedding-v4 | answer_relevancy 的反向问题嵌入比对 |
+
+环境变量：`MINIMAX_API_KEY` + `DASHSCOPE_API_KEY`。
+
+#### 用法
+
+```bash
+# 跑完整评估（默认读 questions.json，写到 data/eval_results/{ts}/）
+python main.py evaluate
+
+# 试跑 3 条
+python main.py evaluate --limit 3
+
+# 仅收集样本不调 judge（不花 token，验证 pipeline 能产出 contexts）
+python main.py evaluate --skip-judge --output data/eval_results/smoke
+
+# 自定义问题集和输出目录
+python main.py evaluate --questions path/to/q.json --output data/eval_results/exp1
+```
+
+输出：
+- `data/eval_results/{ts}/report.csv`：每题各指标分数
+- `data/eval_results/{ts}/summary.md`：聚合均值 + 运行时长
+
+#### A/B 对比工作流
+
+1. 跑基线：`python main.py evaluate --output data/eval_results/baseline`
+2. 改配置 / 切块 / 重排参数
+3. 跑改动后：`python main.py evaluate --output data/eval_results/v2`
+4. 对比 `summary.md` 里的均值差异
+
+#### 测试
+
+```bash
+PYTHONIOENCODING=utf-8 conda run -n rag-cy pytest tests/ --cov=src.evaluation --cov-report=term
+```
+
+当前覆盖率 ~90%（24 个用例）。
 
 ### 许可证
 
